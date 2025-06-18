@@ -1,147 +1,140 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
 from io import BytesIO
 
-# 🚀 Configuração da página
-st.set_page_config(page_title="Painel VISA - Ipojuca", layout="wide")
+# Configurações da página
+st.set_page_config(page_title="Painel de Produção - Vigilância Sanitária de Ipojuca", layout="wide")
 st.title("📊 Painel de Produção - Vigilância Sanitária de Ipojuca")
 
-# 🔗 URL da planilha Google Sheets
+# URL da planilha do Google Sheets
 url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
 
-# 🔄 Carregar dados
+# Carregar dados
 @st.cache_data
 def carregar_dados():
-    df = pd.read_csv(url)
-    df.columns = df.columns.str.strip().str.upper()
+    df = pd.read_csv(url, dtype=str)
+    df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    return df
 
-    df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce', dayfirst=True)
-    df['MÊS'] = df['DATA'].dt.to_period('M').astype(str)
+df = carregar_dados()
 
-    df['INSPETOR_LISTA'] = df['EQUIPE/INSPETOR'].fillna('').str.upper().str.split(r',\s*')
+# Padronizar e tratar dados
+for coluna in ['DATAS', 'TURNO', 'ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO',
+               'CLASSIFICAÇÃO DE RISCO', 'EQUIPE/INSPETOR', 'MOTIVAÇÃO', 
+               'O ESTABELECIMENTO FOI LIBERADO', 'NÚMERO DA VISITA']:
+    if coluna not in df.columns:
+        df[coluna] = ''
 
-    df_inspetores = df.explode('INSPETOR_LISTA')
-    df_inspetores['INSPETOR_LISTA'] = df_inspetores['INSPETOR_LISTA'].str.strip()
+# Criar lista de inspetores individuais
+def extrair_inspetores(texto):
+    if pd.isna(texto):
+        return []
+    return [nome.strip().upper() for nome in str(texto).split(',')]
 
-    return df, df_inspetores
+df['INSPETOR_LISTA'] = df['EQUIPE/INSPETOR'].apply(extrair_inspetores)
 
-# Carregar dados
-df_equipes, df_inspetores = carregar_dados()
-
-# 🔍 Sidebar - Filtros
+# -------------------------------
+# BARRA LATERAL COM FILTROS
+# -------------------------------
 st.sidebar.header("Filtros")
-todos_inspetores = sorted(set([i.strip() for sub in df_equipes['INSPETOR_LISTA'] for i in sub if i]))
 
-filtros = {
-    'MÊS': st.sidebar.multiselect("📅 Mês", sorted(df_equipes['MÊS'].dropna().unique())),
-    'DATA': st.sidebar.multiselect("📆 Data", sorted(df_equipes['DATA'].dropna().dt.strftime('%d/%m/%Y').unique())),
-    'ESTABELECIMENTO': st.sidebar.multiselect("🏢 Estabelecimento", sorted(df_equipes['ESTABELECIMENTO'].dropna().unique())),
-    'TURNO': st.sidebar.multiselect("🕑 Turno", sorted(df_equipes['TURNO'].dropna().unique())),
-    'LOCALIDADE': st.sidebar.multiselect("📍 Localidade", sorted(df_equipes['LOCALIDADE'].dropna().unique())),
-    'COORDENAÇÃO': st.sidebar.multiselect("👥 Coordenação", sorted(df_equipes['COORDENAÇÃO'].dropna().unique())),
-    'CLASSIFICAÇÃO DE RISCO': st.sidebar.multiselect("⚠️ Classificação de Risco", sorted(df_equipes['CLASSIFICAÇÃO DE RISCO'].dropna().unique())),
-    'MOTIVAÇÃO': st.sidebar.multiselect("🎯 Motivação", sorted(df_equipes['MOTIVAÇÃO'].dropna().unique())),
-    'STATUS': st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df_equipes['O ESTABELECIMENTO FOI LIBERADO'].dropna().unique())),
-    'INSPETOR': st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
-}
+# Filtros principais
+datas = st.sidebar.multiselect("📅 Data", sorted(df['DATAS'].dropna().unique()))
+turno = st.sidebar.multiselect("🕑 Turno", sorted(df['TURNO'].dropna().unique()))
+localidade = st.sidebar.multiselect("📍 Localidade", sorted(df['LOCALIDADE'].dropna().unique()))
+estabelecimento = st.sidebar.multiselect("🏢 Estabelecimento", sorted(df['ESTABELECIMENTO'].dropna().unique()))
+coordenacao = st.sidebar.multiselect("👥 Coordenação", sorted(df['COORDENAÇÃO'].dropna().unique()))
+class_risco = st.sidebar.multiselect("⚠️ Classificação de Risco", sorted(df['CLASSIFICAÇÃO DE RISCO'].dropna().unique()))
+motivacao = st.sidebar.multiselect("🎯 Motivação", sorted(df['MOTIVAÇÃO'].dropna().unique()))
+status = st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df['O ESTABELECIMENTO FOI LIBERADO'].dropna().unique()))
 
-def aplicar_filtros(df):
-    df_filtrado = df.copy()
+# Filtro por inspetor
+todos_inspetores = sorted(set(sum(df['INSPETOR_LISTA'].tolist(), [])))
+inspetores = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
 
-    if filtros['MÊS']:
-        df_filtrado = df_filtrado[df_filtrado['MÊS'].isin(filtros['MÊS'])]
+# -------------------------------
+# APLICAR FILTROS
+# -------------------------------
+df_filtrado = df.copy()
 
-    if filtros['DATA']:
-        datas_convertidas = pd.to_datetime(filtros['DATA'], format='%d/%m/%Y', errors='coerce')
-        df_filtrado = df_filtrado[df_filtrado['DATA'].isin(datas_convertidas)]
+if datas:
+    df_filtrado = df_filtrado[df_filtrado['DATAS'].isin(datas)]
+if turno:
+    df_filtrado = df_filtrado[df_filtrado['TURNO'].isin(turno)]
+if localidade:
+    df_filtrado = df_filtrado[df_filtrado['LOCALIDADE'].isin(localidade)]
+if estabelecimento:
+    df_filtrado = df_filtrado[df_filtrado['ESTABELECIMENTO'].isin(estabelecimento)]
+if coordenacao:
+    df_filtrado = df_filtrado[df_filtrado['COORDENAÇÃO'].isin(coordenacao)]
+if class_risco:
+    df_filtrado = df_filtrado[df_filtrado['CLASSIFICAÇÃO DE RISCO'].isin(class_risco)]
+if motivacao:
+    df_filtrado = df_filtrado[df_filtrado['MOTIVAÇÃO'].isin(motivacao)]
+if status:
+    df_filtrado = df_filtrado[df_filtrado['O ESTABELECIMENTO FOI LIBERADO'].isin(status)]
+if inspetores:
+    df_filtrado = df_filtrado[df_filtrado['INSPETOR_LISTA'].apply(lambda x: any(i in x for i in inspetores))]
 
-    for coluna in ['ESTABELECIMENTO', 'TURNO', 'LOCALIDADE', 'COORDENAÇÃO', 'CLASSIFICAÇÃO DE RISCO', 'MOTIVAÇÃO', 'STATUS']:
-        filtro_col = 'O ESTABELECIMENTO FOI LIBERADO' if coluna == 'STATUS' else coluna
-        if filtros[coluna]:
-            df_filtrado = df_filtrado[df_filtrado[filtro_col].isin(filtros[coluna])]
-
-    if filtros['INSPETOR']:
-        df_filtrado = df_filtrado[df_filtrado['INSPETOR_LISTA'].apply(
-            lambda x: any(i in x for i in filtros['INSPETOR'])
-        )]
-
-    return df_filtrado
-
-# Aplicar filtros
-df_equipes_filtrado = aplicar_filtros(df_equipes)
-df_inspetores_filtrado = aplicar_filtros(df_inspetores)
-
-# 🔹 Resumo da Seleção
-if len(filtros['ESTABELECIMENTO']) == 1:
-    dados_resumo = df_equipes_filtrado[['ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO', 'CLASSIFICAÇÃO DE RISCO']].drop_duplicates()
+# -------------------------------
+# RESUMO DA SELEÇÃO
+# -------------------------------
+if len(estabelecimento) == 1:
     st.sidebar.subheader("📌 Resumo da Seleção")
-    st.sidebar.dataframe(dados_resumo)
+    est = estabelecimento[0]
+    dados_est = df_filtrado[df_filtrado['ESTABELECIMENTO'] == est]
+    local = dados_est['LOCALIDADE'].dropna().unique()
+    coord = dados_est['COORDENAÇÃO'].dropna().unique()
+    risco = dados_est['CLASSIFICAÇÃO DE RISCO'].dropna().unique()
 
-# 🔹 Visualização de Dados (Por Equipe)
-st.subheader("📑 Visualização dos Dados (Por Equipe)")
-st.dataframe(df_equipes_filtrado[['DATA', 'ESTABELECIMENTO', 'LOCALIDADE', 'TURNO', 'COORDENAÇÃO',
-                                  'CLASSIFICAÇÃO DE RISCO', 'MOTIVAÇÃO', 'O ESTABELECIMENTO FOI LIBERADO',
-                                  'NÚMERO DA VISITA', 'EQUIPE/INSPETOR']])
+    st.sidebar.markdown(f"""
+    - **Estabelecimento:** {est}
+    - **Localidade:** {', '.join(local) if len(local) > 0 else 'Não informado'}
+    - **Coordenação:** {', '.join(coord) if len(coord) > 0 else 'Não informado'}
+    - **Classificação de Risco:** {', '.join(risco) if len(risco) > 0 else 'Não informado'}
+    """)
 
-# 🔹 Gráficos - Produção por Equipe
-st.subheader("📊 Análise Gráfica - Produção por Equipe")
+# -------------------------------
+# VISUALIZAÇÃO DE DADOS
+# -------------------------------
+st.subheader("📑 Visualização dos Dados")
+
+st.dataframe(
+    df_filtrado[['DATAS', 'TURNO', 'ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO',
+                 'CLASSIFICAÇÃO DE RISCO', 'MOTIVAÇÃO', 'O ESTABELECIMENTO FOI LIBERADO',
+                 'NÚMERO DA VISITA', 'EQUIPE/INSPETOR']]
+)
+
+# -------------------------------
+# GRÁFICOS
+# -------------------------------
+st.subheader("📊 Análise Gráfica")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    if not df_equipes_filtrado.empty:
-        fig_local = px.bar(df_equipes_filtrado['LOCALIDADE'].value_counts().reset_index(),
-                            x='index', y='LOCALIDADE',
-                            labels={'index':'Localidade', 'LOCALIDADE':'Número de Visitas'},
-                            title='Visitas por Localidade')
-        st.plotly_chart(fig_local, use_container_width=True)
-    else:
-        st.warning("Nenhum dado para gerar gráfico de Localidade.")
+    graf1 = px.histogram(df_filtrado, x='LOCALIDADE', color='CLASSIFICAÇÃO DE RISCO',
+                          title="Distribuição por Localidade e Risco")
+    st.plotly_chart(graf1, use_container_width=True)
 
 with col2:
-    if not df_equipes_filtrado.empty:
-        fig_risco = px.bar(df_equipes_filtrado['CLASSIFICAÇÃO DE RISCO'].value_counts().reset_index(),
-                            x='index', y='CLASSIFICAÇÃO DE RISCO',
-                            labels={'index':'Classificação de Risco', 'CLASSIFICAÇÃO DE RISCO':'Número de Visitas'},
-                            title='Visitas por Classificação de Risco')
-        st.plotly_chart(fig_risco, use_container_width=True)
-    else:
-        st.warning("Nenhum dado para gerar gráfico de Classificação de Risco.")
+    graf2 = px.histogram(df_filtrado, x='COORDENAÇÃO', color='CLASSIFICAÇÃO DE RISCO',
+                          title="Distribuição por Coordenação e Risco")
+    st.plotly_chart(graf2, use_container_width=True)
 
-# 🔹 Produção por Inspetor
-st.subheader("🕵️‍♂️ Produção por Inspetor (Individual)")
-
-if not df_inspetores_filtrado.empty:
-    df_insp = df_inspetores_filtrado['INSPETOR_LISTA'].value_counts().reset_index()
-    df_insp.columns = ['Inspetor', 'Número de Visitas']
-    fig_insp = px.bar(df_insp, x='Inspetor', y='Número de Visitas', color='Inspetor',
-                       title="Produção Individual dos Inspetores")
-    st.plotly_chart(fig_insp, use_container_width=True)
-else:
-    st.warning("Nenhum dado para gerar gráfico de Produção por Inspetor.")
-
-# 🔽 Download dos Dados
-def gerar_excel_download(df):
+# -------------------------------
+# DOWNLOAD DOS DADOS
+# -------------------------------
+def gerar_excel_download(dataframe):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Dados Filtrados')
-    output.seek(0)
+        dataframe.to_excel(writer, index=False, sheet_name='Dados Filtrados')
     return output.getvalue()
 
-st.subheader("📥 Download dos Dados")
-
 st.download_button(
-    label="📥 Baixar Dados Filtrados (Por Equipe)",
-    data=gerar_excel_download(df_equipes_filtrado),
-    file_name="dados_filtrados_equipes.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-st.download_button(
-    label="📥 Baixar Dados Produção por Inspetor",
-    data=gerar_excel_download(df_inspetores_filtrado),
-    file_name="dados_filtrados_inspetores.xlsx",
+    label="📥 Download dos Dados Filtrados",
+    data=gerar_excel_download(df_filtrado.drop(columns=['INSPETOR_LISTA'], errors='ignore')),
+    file_name="dados_filtrados_visa.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
