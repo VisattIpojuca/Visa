@@ -3,14 +3,14 @@ import pandas as pd
 import plotly.express as px
 from io import BytesIO
 
-# Configurações da página
-st.set_page_config(page_title="Painel de Produção - Vigilância Sanitária de Ipojuca", layout="wide")
-st.title("📊 Painel de Produção - Vigilância Sanitária de Ipojuca")
+# 🎨 Configurações da página
+st.set_page_config(page_title="Painel VISA Ipojuca", layout="wide")
+st.title("🦠 Painel de Produção - Vigilância Sanitária de Ipojuca")
 
-# URL da planilha do Google Sheets (exportando como CSV)
+# 📥 URL da planilha
 url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
 
-# Carregar dados
+# 🚀 Carregar dados
 @st.cache_data
 def carregar_dados():
     df = pd.read_csv(url, dtype=str)
@@ -19,14 +19,17 @@ def carregar_dados():
 
 df = carregar_dados()
 
-# Remover a coluna "Carimbo de data/hora" se existir
+# 🔧 Limpeza básica
 if 'Carimbo de data/hora' in df.columns:
     df = df.drop(columns=['Carimbo de data/hora'])
 
-# Verificar nome da coluna de data
-col_data = [c for c in df.columns if "data" in c.lower()][0]  # Busca coluna que contém "data"
+# Identificar coluna de data
+col_data = [c for c in df.columns if "data" in c.lower()][0]
 
-# Criar coluna auxiliar de inspetores individuais
+# Transformar data em formato datetime
+df[col_data] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
+
+# Corrigir lista de inspetores
 def extrair_inspetores(texto):
     if pd.isna(texto):
         return []
@@ -35,12 +38,22 @@ def extrair_inspetores(texto):
 df['INSPETOR_LISTA'] = df['EQUIPE/INSPETOR'].apply(extrair_inspetores)
 
 # -------------------------------
-# BARRA LATERAL COM FILTROS
+# 🧠 Barra lateral - Filtros
 # -------------------------------
 st.sidebar.header("Filtros")
 
-# Filtros principais
-datas = st.sidebar.multiselect("📅 Data", sorted(df[col_data].dropna().unique()))
+# Filtro de datas em formato de calendário
+data_min = df[col_data].min()
+data_max = df[col_data].max()
+
+data_range = st.sidebar.date_input(
+    "📅 Período",
+    value=(data_min, data_max),
+    min_value=data_min,
+    max_value=data_max
+)
+
+# Filtros adicionais
 turno = st.sidebar.multiselect("🕑 Turno", sorted(df['TURNO'].dropna().unique()))
 localidade = st.sidebar.multiselect("📍 Localidade", sorted(df['LOCALIDADE'].dropna().unique()))
 estabelecimento = st.sidebar.multiselect("🏢 Estabelecimento", sorted(df['ESTABELECIMENTO'].dropna().unique()))
@@ -54,12 +67,15 @@ todos_inspetores = sorted(set(sum(df['INSPETOR_LISTA'].tolist(), [])))
 inspetores = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
 
 # -------------------------------
-# APLICAR FILTROS
+# 🔍 Aplicar filtros
 # -------------------------------
 df_filtrado = df.copy()
 
-if datas:
-    df_filtrado = df_filtrado[df_filtrado[col_data].isin(datas)]
+if data_range:
+    df_filtrado = df_filtrado[
+        (df_filtrado[col_data] >= pd.to_datetime(data_range[0])) &
+        (df_filtrado[col_data] <= pd.to_datetime(data_range[1]))
+    ]
 if turno:
     df_filtrado = df_filtrado[df_filtrado['TURNO'].isin(turno)]
 if localidade:
@@ -78,7 +94,7 @@ if inspetores:
     df_filtrado = df_filtrado[df_filtrado['INSPETOR_LISTA'].apply(lambda x: any(i in x for i in inspetores))]
 
 # -------------------------------
-# RESUMO DA SELEÇÃO
+# 📌 Resumo da seleção
 # -------------------------------
 if len(estabelecimento) == 1:
     st.sidebar.subheader("📌 Resumo da Seleção")
@@ -96,7 +112,7 @@ if len(estabelecimento) == 1:
     """)
 
 # -------------------------------
-# VISUALIZAÇÃO DE DADOS
+# 📑 Visualização dos Dados
 # -------------------------------
 st.subheader("📑 Visualização dos Dados")
 
@@ -107,24 +123,45 @@ st.dataframe(
 )
 
 # -------------------------------
-# GRÁFICOS
+# 📊 Gráficos
 # -------------------------------
-st.subheader("📊 Análise Gráfica")
+st.subheader("📈 Análises Gráficas")
 
 col1, col2 = st.columns(2)
 
+# 📅 Produção ao longo do período
 with col1:
-    graf1 = px.histogram(df_filtrado, x='LOCALIDADE', color='CLASSIFICAÇÃO DE RISCO',
-                          title="Distribuição por Localidade e Risco")
+    prod_por_data = df_filtrado.groupby(col_data).size().reset_index(name='Inspeções')
+    graf1 = px.bar(prod_por_data, x=col_data, y='Inspeções',
+                   title="📅 Produção ao Longo do Período")
     st.plotly_chart(graf1, use_container_width=True)
 
+# 🎯 Distribuição por Motivação
 with col2:
-    graf2 = px.histogram(df_filtrado, x='COORDENAÇÃO', color='CLASSIFICAÇÃO DE RISCO',
-                          title="Distribuição por Coordenação e Risco")
+    motiv_counts = df_filtrado['MOTIVAÇÃO'].value_counts().reset_index()
+    motiv_counts.columns = ['Motivação', 'Quantidade']
+    graf2 = px.pie(motiv_counts, names='Motivação', values='Quantidade',
+                   title="🎯 Distribuição por Motivação")
     st.plotly_chart(graf2, use_container_width=True)
 
+# ✔️ Status do Estabelecimento
+col3, col4 = st.columns(2)
+with col3:
+    status_counts = df_filtrado['O ESTABELECIMENTO FOI LIBERADO'].value_counts().reset_index()
+    status_counts.columns = ['Status', 'Quantidade']
+    graf3 = px.pie(status_counts, names='Status', values='Quantidade',
+                   title="✔️ Status do Estabelecimento")
+    st.plotly_chart(graf3, use_container_width=True)
+
+# 🏙️ Classificação de Risco por Localidade
+with col4:
+    risco_local = df_filtrado.groupby(['LOCALIDADE', 'CLASSIFICAÇÃO DE RISCO']).size().reset_index(name='Quantidade')
+    graf4 = px.bar(risco_local, x='LOCALIDADE', y='Quantidade', color='CLASSIFICAÇÃO DE RISCO',
+                   title="🏙️ Classificação de Risco por Localidade", barmode='stack')
+    st.plotly_chart(graf4, use_container_width=True)
+
 # -------------------------------
-# DOWNLOAD DOS DADOS
+# 📥 Download dos Dados
 # -------------------------------
 def gerar_excel_download(dataframe):
     output = BytesIO()
