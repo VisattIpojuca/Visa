@@ -3,138 +3,122 @@ import pandas as pd
 import plotly.express as px
 from io import BytesIO
 
-# Configurações da página
+# Configuração da página
 st.set_page_config(page_title="Painel de Produção - Vigilância Sanitária de Ipojuca", layout="wide")
+
 st.title("📊 Painel de Produção - Vigilância Sanitária de Ipojuca")
 
-# URL da planilha do Google Sheets
-url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
-
-# Carregar dados
+# --- FUNÇÃO PARA CARREGAR OS DADOS ---
 @st.cache_data
 def carregar_dados():
-    df = pd.read_csv(url, dtype=str)
-    df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
+    df = pd.read_csv(url)
     return df
 
-df = carregar_dados()
 
-# Padronizar e tratar dados
-for coluna in ['DATAS', 'TURNO', 'ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO',
-               'CLASSIFICAÇÃO DE RISCO', 'EQUIPE/INSPETOR', 'MOTIVAÇÃO', 
-               'O ESTABELECIMENTO FOI LIBERADO', 'NÚMERO DA VISITA']:
-    if coluna not in df.columns:
-        df[coluna] = ''
+# --- CARREGAR OS DADOS ---
+try:
+    df = carregar_dados()
+    df.columns = df.columns.str.strip().str.upper()  # Remove espaços e deixa tudo em caixa alta
+except Exception as e:
+    st.error(f"Erro ao carregar os dados: {e}")
+    st.stop()
 
-# Criar lista de inspetores individuais
-def extrair_inspetores(texto):
-    if pd.isna(texto):
-        return []
-    return [nome.strip().upper() for nome in str(texto).split(',')]
+# --- VERIFICAR COLUNAS NECESSÁRIAS ---
+colunas_necessarias = ["ESTABELECIMENTO", "TURNO", "LOCALIDADE", "COORDENAÇÃO", "CLASSIFICAÇÃO DE RISCO", "EQUIPE/INSPETOR"]
 
-df['INSPETOR_LISTA'] = df['EQUIPE/INSPETOR'].apply(extrair_inspetores)
+faltando = [col for col in colunas_necessarias if col not in df.columns]
 
-# -------------------------------
-# BARRA LATERAL COM FILTROS
-# -------------------------------
-st.sidebar.header("Filtros")
+if faltando:
+    st.error(f"🚨 As seguintes colunas estão faltando na planilha: {', '.join(faltando)}")
+    st.subheader("🔍 Nomes encontrados na planilha:")
+    st.write(df.columns.tolist())
+    st.stop()
 
-# Filtros principais
-datas = st.sidebar.multiselect("📅 Data", sorted(df['DATAS'].dropna().unique()))
-turno = st.sidebar.multiselect("🕑 Turno", sorted(df['TURNO'].dropna().unique()))
-localidade = st.sidebar.multiselect("📍 Localidade", sorted(df['LOCALIDADE'].dropna().unique()))
-estabelecimento = st.sidebar.multiselect("🏢 Estabelecimento", sorted(df['ESTABELECIMENTO'].dropna().unique()))
-coordenacao = st.sidebar.multiselect("👥 Coordenação", sorted(df['COORDENAÇÃO'].dropna().unique()))
-class_risco = st.sidebar.multiselect("⚠️ Classificação de Risco", sorted(df['CLASSIFICAÇÃO DE RISCO'].dropna().unique()))
-motivacao = st.sidebar.multiselect("🎯 Motivação", sorted(df['MOTIVAÇÃO'].dropna().unique()))
-status = st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df['O ESTABELECIMENTO FOI LIBERADO'].dropna().unique()))
+# --- AJUSTES NA COLUNA DE INSPETOR ---
+# Expandir os nomes de inspetores que estão separados por vírgula
+df_inspetores = df.copy()
 
-# Filtro por inspetor
-todos_inspetores = sorted(set(sum(df['INSPETOR_LISTA'].tolist(), [])))
-inspetores = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
-
-# -------------------------------
-# APLICAR FILTROS
-# -------------------------------
-df_filtrado = df.copy()
-
-if datas:
-    df_filtrado = df_filtrado[df_filtrado['DATAS'].isin(datas)]
-if turno:
-    df_filtrado = df_filtrado[df_filtrado['TURNO'].isin(turno)]
-if localidade:
-    df_filtrado = df_filtrado[df_filtrado['LOCALIDADE'].isin(localidade)]
-if estabelecimento:
-    df_filtrado = df_filtrado[df_filtrado['ESTABELECIMENTO'].isin(estabelecimento)]
-if coordenacao:
-    df_filtrado = df_filtrado[df_filtrado['COORDENAÇÃO'].isin(coordenacao)]
-if class_risco:
-    df_filtrado = df_filtrado[df_filtrado['CLASSIFICAÇÃO DE RISCO'].isin(class_risco)]
-if motivacao:
-    df_filtrado = df_filtrado[df_filtrado['MOTIVAÇÃO'].isin(motivacao)]
-if status:
-    df_filtrado = df_filtrado[df_filtrado['O ESTABELECIMENTO FOI LIBERADO'].isin(status)]
-if inspetores:
-    df_filtrado = df_filtrado[df_filtrado['INSPETOR_LISTA'].apply(lambda x: any(i in x for i in inspetores))]
-
-# -------------------------------
-# RESUMO DA SELEÇÃO
-# -------------------------------
-if len(estabelecimento) == 1:
-    st.sidebar.subheader("📌 Resumo da Seleção")
-    est = estabelecimento[0]
-    dados_est = df_filtrado[df_filtrado['ESTABELECIMENTO'] == est]
-    local = dados_est['LOCALIDADE'].dropna().unique()
-    coord = dados_est['COORDENAÇÃO'].dropna().unique()
-    risco = dados_est['CLASSIFICAÇÃO DE RISCO'].dropna().unique()
-
-    st.sidebar.markdown(f"""
-    - **Estabelecimento:** {est}
-    - **Localidade:** {', '.join(local) if len(local) > 0 else 'Não informado'}
-    - **Coordenação:** {', '.join(coord) if len(coord) > 0 else 'Não informado'}
-    - **Classificação de Risco:** {', '.join(risco) if len(risco) > 0 else 'Não informado'}
-    """)
-
-# -------------------------------
-# VISUALIZAÇÃO DE DADOS
-# -------------------------------
-st.subheader("📑 Visualização dos Dados")
-
-st.dataframe(
-    df_filtrado[['DATAS', 'TURNO', 'ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO',
-                 'CLASSIFICAÇÃO DE RISCO', 'MOTIVAÇÃO', 'O ESTABELECIMENTO FOI LIBERADO',
-                 'NÚMERO DA VISITA', 'EQUIPE/INSPETOR']]
+df_inspetores['INSPETOR_LISTA'] = df_inspetores['EQUIPE/INSPETOR'].fillna('').apply(
+    lambda x: [nome.strip() for nome in str(x).split(',') if nome.strip() != '']
 )
 
-# -------------------------------
-# GRÁFICOS
-# -------------------------------
-st.subheader("📊 Análise Gráfica")
+inspetores_unicos = sorted(set([nome for sublist in df_inspetores['INSPETOR_LISTA'] for nome in sublist]))
+
+# --- DEFINIR OS FILTROS ---
+st.sidebar.header("🎯 Filtros")
+
+filtro_estabelecimento = st.sidebar.multiselect("Estabelecimento", sorted(df['ESTABELECIMENTO'].dropna().unique()))
+filtro_turno = st.sidebar.multiselect("Turno", sorted(df['TURNO'].dropna().unique()))
+filtro_localidade = st.sidebar.multiselect("Localidade", sorted(df['LOCALIDADE'].dropna().unique()))
+filtro_coordenacao = st.sidebar.multiselect("Coordenação", sorted(df['COORDENAÇÃO'].dropna().unique()))
+filtro_classificacao = st.sidebar.multiselect("Classificação de risco", sorted(df['CLASSIFICAÇÃO DE RISCO'].dropna().unique()))
+filtro_inspetor = st.sidebar.multiselect("Inspetor", inspetores_unicos)
+
+# --- APLICAR FILTROS ---
+df_filtrado = df_inspetores.copy()
+
+if filtro_estabelecimento:
+    df_filtrado = df_filtrado[df_filtrado['ESTABELECIMENTO'].isin(filtro_estabelecimento)]
+if filtro_turno:
+    df_filtrado = df_filtrado[df_filtrado['TURNO'].isin(filtro_turno)]
+if filtro_localidade:
+    df_filtrado = df_filtrado[df_filtrado['LOCALIDADE'].isin(filtro_localidade)]
+if filtro_coordenacao:
+    df_filtrado = df_filtrado[df_filtrado['COORDENAÇÃO'].isin(filtro_coordenacao)]
+if filtro_classificacao:
+    df_filtrado = df_filtrado[df_filtrado['CLASSIFICAÇÃO DE RISCO'].isin(filtro_classificacao)]
+if filtro_inspetor:
+    df_filtrado = df_filtrado[df_filtrado['INSPETOR_LISTA'].apply(lambda x: any(i in x for i in filtro_inspetor))]
+
+# --- RESUMO DA SELEÇÃO ---
+if len(filtro_estabelecimento) == 1:
+    est = filtro_estabelecimento[0]
+    dados_est = df[df['ESTABELECIMENTO'] == est].iloc[0]
+
+    with st.sidebar.expander("📌 Resumo da Seleção", expanded=True):
+        st.write(f"**Estabelecimento:** {dados_est.get('ESTABELECIMENTO', 'Não informado')}")
+        st.write(f"**Localidade:** {dados_est.get('LOCALIDADE', 'Não informado')}")
+        st.write(f"**Coordenação:** {dados_est.get('COORDENAÇÃO', 'Não informado')}")
+        st.write(f"**Classificação de risco:** {dados_est.get('CLASSIFICAÇÃO DE RISCO', 'Não informado')}")
+
+# --- BOTÃO DE DOWNLOAD DA TABELA FILTRADA ---
+def gerar_excel_download(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Dados Filtrados')
+    processed_data = output.getvalue()
+    return processed_data
+
+st.sidebar.download_button(
+    label="📥 Baixar dados filtrados",
+    data=gerar_excel_download(df_filtrado.drop(columns=['INSPETOR_LISTA'], errors='ignore')),
+    file_name='dados_filtrados.xlsx',
+    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+)
+
+# --- ÁREA PRINCIPAL ---
+st.subheader("📑 Visualização dos Dados")
+
+st.dataframe(df_filtrado.drop(columns=['INSPETOR_LISTA'], errors='ignore'), use_container_width=True)
+
+# --- GRÁFICOS ---
 
 col1, col2 = st.columns(2)
 
 with col1:
-    graf1 = px.histogram(df_filtrado, x='LOCALIDADE', color='CLASSIFICAÇÃO DE RISCO',
-                          title="Distribuição por Localidade e Risco")
-    st.plotly_chart(graf1, use_container_width=True)
+    grafico_localidade = df_filtrado['LOCALIDADE'].value_counts().reset_index()
+    grafico_localidade.columns = ['Localidade', 'Quantidade']
+    fig1 = px.bar(grafico_localidade, x='Localidade', y='Quantidade',
+                  title='Atendimentos por Localidade', text_auto=True)
+    st.plotly_chart(fig1, use_container_width=True)
 
 with col2:
-    graf2 = px.histogram(df_filtrado, x='COORDENAÇÃO', color='CLASSIFICAÇÃO DE RISCO',
-                          title="Distribuição por Coordenação e Risco")
-    st.plotly_chart(graf2, use_container_width=True)
+    grafico_classificacao = df_filtrado['CLASSIFICAÇÃO DE RISCO'].value_counts().reset_index()
+    grafico_classificacao.columns = ['Classificação de risco', 'Quantidade']
+    fig2 = px.pie(grafico_classificacao, names='Classificação de risco', values='Quantidade',
+                  title='Distribuição por Classificação de risco')
+    st.plotly_chart(fig2, use_container_width=True)
 
-# -------------------------------
-# DOWNLOAD DOS DADOS
-# -------------------------------
-def gerar_excel_download(dataframe):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        dataframe.to_excel(writer, index=False, sheet_name='Dados Filtrados')
-    return output.getvalue()
-
-st.download_button(
-    label="📥 Download dos Dados Filtrados",
-    data=gerar_excel_download(df_filtrado.drop(columns=['INSPETOR_LISTA'], errors='ignore')),
-    file_name="dados_filtrados_visa.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+st.markdown("---")
+st.caption("Desenvolvido pela Vigilância em Saúde de Ipojuca - 2025")
