@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
+from datetime import datetime
 
 # 🎨 Configurações da página
 st.set_page_config(page_title="Painel VISA Ipojuca", layout="wide")
@@ -19,17 +20,15 @@ def carregar_dados():
 
 df = carregar_dados()
 
-# 🔧 Limpeza básica
+# 🔧 Limpeza
 if 'Carimbo de data/hora' in df.columns:
     df = df.drop(columns=['Carimbo de data/hora'])
 
-# Identificar coluna de data
+# 🔎 Identificar a coluna de data
 col_data = [c for c in df.columns if "data" in c.lower()][0]
-
-# Transformar data em formato datetime
 df[col_data] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
 
-# Corrigir lista de inspetores
+# 👥 Lista de inspetores
 def extrair_inspetores(texto):
     if pd.isna(texto):
         return []
@@ -42,18 +41,25 @@ df['INSPETOR_LISTA'] = df['EQUIPE/INSPETOR'].apply(extrair_inspetores)
 # -------------------------------
 st.sidebar.header("Filtros")
 
-# Filtro de datas em formato de calendário
+# 📅 Filtro de Data com seleção automática do ano atual
 data_min = df[col_data].min()
 data_max = df[col_data].max()
 
+ano_atual = datetime.now().year
+data_inicio_ano = pd.to_datetime(f"{ano_atual}-01-01")
+data_fim_ano = pd.to_datetime(f"{ano_atual}-12-31")
+
+data_inicio = max(data_min, data_inicio_ano)
+data_fim = min(data_max, data_fim_ano)
+
 data_range = st.sidebar.date_input(
     "📅 Período",
-    value=(data_min, data_max),
+    value=(data_inicio, data_fim),
     min_value=data_min,
     max_value=data_max
 )
 
-# Filtros adicionais
+# 🔗 Filtros adicionais
 turno = st.sidebar.multiselect("🕑 Turno", sorted(df['TURNO'].dropna().unique()))
 localidade = st.sidebar.multiselect("📍 Localidade", sorted(df['LOCALIDADE'].dropna().unique()))
 estabelecimento = st.sidebar.multiselect("🏢 Estabelecimento", sorted(df['ESTABELECIMENTO'].dropna().unique()))
@@ -62,7 +68,6 @@ class_risco = st.sidebar.multiselect("⚠️ Classificação de Risco", sorted(d
 motivacao = st.sidebar.multiselect("🎯 Motivação", sorted(df['MOTIVAÇÃO'].dropna().unique()))
 status = st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df['O ESTABELECIMENTO FOI LIBERADO'].dropna().unique()))
 
-# Filtro por inspetor
 todos_inspetores = sorted(set(sum(df['INSPETOR_LISTA'].tolist(), [])))
 inspetores = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
 
