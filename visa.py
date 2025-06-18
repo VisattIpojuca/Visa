@@ -4,11 +4,11 @@ import plotly.express as px
 from io import BytesIO
 from datetime import datetime
 
-# 🎨 Configurações da página
+# 🎨 Configuração da página
 st.set_page_config(page_title="Painel VISA Ipojuca", layout="wide")
-st.title("🔍 Painel de Produção - Vigilância Sanitária de Ipojuca")
+st.title("🔍 Painel de Produção - Vigilância Sanitária de Ipojuca" 🕵️‍♂️)
 
-# 📥 URL da planilha
+# 📥 Fonte de dados
 url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
 
 # 🚀 Carregar dados
@@ -20,15 +20,15 @@ def carregar_dados():
 
 df = carregar_dados()
 
-# 🔧 Limpeza
+# 🔧 Tratamento inicial
 if 'Carimbo de data/hora' in df.columns:
     df = df.drop(columns=['Carimbo de data/hora'])
 
-# 🔎 Identificar a coluna de data
+# 🔍 Identificar coluna de data
 col_data = [c for c in df.columns if "data" in c.lower()][0]
 df[col_data] = pd.to_datetime(df[col_data], dayfirst=True, errors='coerce')
 
-# 👥 Lista de inspetores
+# 👥 Separar inspetores
 def extrair_inspetores(texto):
     if pd.isna(texto):
         return []
@@ -41,7 +41,7 @@ df['INSPETOR_LISTA'] = df['EQUIPE/INSPETOR'].apply(extrair_inspetores)
 # -------------------------------
 st.sidebar.header("Filtros")
 
-# 📅 Filtro de Data com seleção automática do ano atual
+# 📅 Filtro de datas com pré-seleção do ano atual
 data_min = df[col_data].min()
 data_max = df[col_data].max()
 
@@ -117,17 +117,6 @@ if len(estabelecimento) == 1:
     """)
 
 # -------------------------------
-# 📑 Visualização dos Dados
-# -------------------------------
-st.subheader("📑 Visualização dos Dados")
-
-st.dataframe(
-    df_filtrado[[col_data, 'TURNO', 'ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO',
-                 'CLASSIFICAÇÃO DE RISCO', 'MOTIVAÇÃO', 'O ESTABELECIMENTO FOI LIBERADO',
-                 'NÚMERO DA VISITA', 'EQUIPE/INSPETOR']]
-)
-
-# -------------------------------
 # 📊 Gráficos
 # -------------------------------
 st.subheader("📈 Análises Gráficas")
@@ -164,6 +153,17 @@ with col4:
     graf4 = px.bar(risco_local, x='LOCALIDADE', y='Quantidade', color='CLASSIFICAÇÃO DE RISCO',
                    title="🏙️ Classificação de Risco por Localidade", barmode='stack')
     st.plotly_chart(graf4, use_container_width=True)
+
+# -------------------------------
+# 📑 Visualização dos Dados (agora abaixo dos gráficos)
+# -------------------------------
+st.subheader("📑 Visualização dos Dados")
+
+colunas_tabela = ['TURNO', 'ESTABELECIMENTO', 'LOCALIDADE', 'COORDENAÇÃO',
+                   'CLASSIFICAÇÃO DE RISCO', 'MOTIVAÇÃO', 'O ESTABELECIMENTO FOI LIBERADO',
+                   'NÚMERO DA VISITA', 'EQUIPE/INSPETOR']
+
+st.dataframe(df_filtrado[colunas_tabela])
 
 # -------------------------------
 # 📥 Download dos Dados

@@ -1,84 +1,39 @@
-📊 Painel de Produção - Vigilância Sanitária de Ipojuca
-📝 Descrição
-Este projeto é um painel interativo desenvolvido com Streamlit para visualizar e filtrar os dados de produção da Vigilância Sanitária de Ipojuca, alimentados por uma planilha do Google Sheets que recebe informações via Google Forms.
+# 🦠 Painel de Produção da Vigilância Sanitária de Ipojuca
 
-O painel permite:
+Este painel tem como objetivo monitorar, analisar e visualizar os dados de produção da Vigilância Sanitária de Ipojuca, a partir das informações preenchidas no formulário oficial da VISA, que alimenta uma planilha online.
 
-Filtrar por múltiplos campos: Estabelecimento, Turno, Localidade, Coordenação, Classificação de risco e Inspetor.
+## 🔗 Acesse o painel online:
+👉 [Clique aqui para acessar o painel no Streamlit](https://painelvisa.streamlit.app/)
 
-Visualizar resumo da seleção para um único estabelecimento.
+---
 
-Visualize tabelas e gráficos interativos.
+## 🚀 Funcionalidades
 
-Fazer download dos dados filtrados em arquivo Excel.
+- 📅 Filtro de período (seleção de datas em formato de calendário)
+- 🕑 Filtro por turno
+- 📍 Filtro por localidade
+- 🏢 Filtro por estabelecimento
+- 👥 Filtro por coordenação
+- ⚠️ Filtro por classificação de risco
+- 🎯 Filtro por motivação
+- ✅ Filtro por status do estabelecimento (liberado ou não)
+- 🕵️‍♂️ Filtro por inspetor (identifica automaticamente os nomes, mesmo quando há mais de um por inspeção)
+- 📥 Download dos dados filtrados
+- 📊 Análises gráficas:
+  - 📅 Produção ao longo do período
+  - 🎯 Distribuição por motivação
+  - ✔️ Status do estabelecimento
+  - 🏙️ Classificação de risco por localidade
 
-Hospedagem via GitHub e publicação no Streamlit Cloud .
+---
 
-🚀 Como usar
-Pré-requisitos
-Python 3.8 ou superior instalado
+## 🗂️ Dados de entrada
 
-Instalar as dependências pessoais emrequisitos.txt
+A planilha é gerada automaticamente pelo Google Forms e está hospedada no Google Sheets, que serve como fonte de dados dinâmica para o painel.
 
-Passos para rodar localmente
-Clone o repositório ou copie os arquivos visa.pye requisitos.txt.
+## 📦 Como executar localmente
 
-Instalar as dependências:
-
-festança
-
-Cópia
-
-Editar
-pip install -r requisitos.txt
-Execute o painel:
-
-festança
-
-Cópia
-
-Editar
-streamlit run visa.py
-O painel abrirá automaticamente no navegador padrão, ou acesse http://localhost:8501.
-
-🛠️ Estrutura dos arquivos
-visa.py: Script principal do painel com toda a lógica de carregamento, filtros, gráficos e download.
-
-requisitos.txt: Lista de bibliotecas Python que permitem rodar o projeto.
-
-⚙️ Configuração da Planilha Google Sheets
-A planilha precisa ser configurada para permitir a exportação em CSV público via URL (exemplo usado no código).
-
-As colunas obrigatórias (em caixa alta) são:
-
-ESTABELECIMENTO
-
-TURNO
-
-LOCALIDADE
-
-COORDENAÇÃO
-
-CLASSIFICAÇÃO DE RISCO
-
-EQUIPE/INSPETOR
-
-📥 Baixe os dados filtrados
-O botão de download permite exportar a seleção atual para um arquivo Excel, utilizando uma biblioteca xlsxwriterpara gerar o arquivo.
-
-🌐 Publicação no Streamlit Cloud
-Para publicar seu painel online:
-
-Faça um push do repositório com os arquivos para o GitHub.
-
-Acesse https://share.streamlit.io/ .
-
-Conecte-se à sua conta do GitHub.
-
-Importe seu repositório e selecione o arquivo visa.pypara iniciar o deploy.
-
-O Streamlit Cloud será instalado automaticamente conforme as dependências declaradas no requisitos.txt.
-
-Contato
-Desenvolvido por: Vigilância em Saúde de Ipojuca
-E-mail: exemplo@ipojuca.pe.gov.br
+1. Clone este repositório:
+```bash
+git clone https://github.com/seuusuario/nome-do-repositorio.git
+cd nome-do-repositorio
