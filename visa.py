@@ -6,7 +6,7 @@ from datetime import datetime
 
 # 🎨 Configuração da página
 st.set_page_config(page_title="Painel VISA Ipojuca", layout="wide")
-st.title("🔍 Painel de Produção - Vigilância Sanitária de Ipojuca" 🕵️‍♂️)
+st.title("🔍 Painel de Produção - Vigilância Sanitária de Ipojuca")
 
 # 📥 Fonte de dados
 url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
