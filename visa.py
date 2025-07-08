@@ -4,9 +4,34 @@ import plotly.express as px
 from io import BytesIO
 from datetime import datetime
 
+# ---🔐 LOGIN SIMPLES ---
+def login():
+    st.title("🔐 Painel da Vigilância Sanitária de Ipojuca")
+    st.subheader("Acesso Restrito")
+
+    with st.form("login_form"):
+        username = st.text_input("Usuário")
+        password = st.text_input("Senha", type="password")
+        submit = st.form_submit_button("Entrar")
+
+    if submit:
+        if username == "admin" and password == "Ipojuca@2025*":
+            st.session_state["autenticado"] = True
+            st.success("✅ Login realizado com sucesso!")
+            st.rerun()
+        else:
+            st.error("❌ Usuário ou senha incorretos.")
+
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if not st.session_state["autenticado"]:
+    login()
+    st.stop()
+
 # 🎨 Configuração da página
 st.set_page_config(page_title="Painel VISA Ipojuca", layout="wide")
-st.title("🔍 Painel de Produção - Vigilância Sanitária de Ipojuca")
+st.title("🦠 Painel de Produção - Vigilância Sanitária de Ipojuca")
 
 # 📥 Fonte de dados
 url = 'https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv'
@@ -155,7 +180,7 @@ with col4:
     st.plotly_chart(graf4, use_container_width=True)
 
 # -------------------------------
-# 📑 Visualização dos Dados (agora abaixo dos gráficos)
+# 📑 Visualização dos Dados
 # -------------------------------
 st.subheader("📑 Visualização dos Dados")
 
