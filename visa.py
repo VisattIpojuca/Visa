@@ -14,44 +14,32 @@ st.set_page_config(
 )
 
 # ======================================================
-# 🔐 LOGIN SIMPLES
+# 🔧 FUNÇÕES AUXILIARES DE PERFIL
 # ======================================================
-def login():
-    st.title("🔐 Painel da Vigilância Sanitária de Ipojuca")
-    st.subheader("Acesso Restrito")
+def extrair_inspetores(texto):
+    if pd.isna(texto):
+        return []
+    return [nome.strip().upper() for nome in str(texto).split(",") if nome.strip()]
 
-    with st.form("login_form"):
-        username = st.text_input("Usuário")
-        password = st.text_input("Senha", type="password")
-        submit = st.form_submit_button("Entrar")
-
-    if submit:
-        if username == "admin" and password == "Ipojuca@2025*":
-            st.session_state["autenticado"] = True
-            st.success("✅ Login realizado com sucesso!")
-            st.rerun()
-        else:
-            st.error("❌ Usuário ou senha incorretos.")
-
-if "autenticado" not in st.session_state:
-    st.session_state["autenticado"] = False
-
-if not st.session_state["autenticado"]:
-    login()
-    st.stop()
-
-# Título principal após login
-st.title("🦠 Painel de Produção - Vigilância Sanitária de Ipojuca")
+def gerar_username(nome_completo: str) -> str:
+    """
+    Gera username no formato primeiro.ultimo em minúsculo
+    Ex: 'ALESSANDRA DO NASCIMENTO' -> 'alessandra.nascimento'
+        'MAVIAEL VICTOR DE BARROS' -> 'maviael.barros'
+    """
+    if not isinstance(nome_completo, str) or not nome_completo.strip():
+        return ""
+    partes = nome_completo.strip().lower().split()
+    if len(partes) == 1:
+        return partes[0]
+    primeiro = partes[0]
+    ultimo = partes[-1]
+    return f"{primeiro}.{ultimo}"
 
 # ======================================================
 # 📥 FONTE E CARREGAMENTO DOS DADOS
 # ======================================================
 URL_DADOS = "https://docs.google.com/spreadsheets/d/1CP6RD8UlHzB6FB7x8fhS3YZB0rVGPyf6q99PNp4iAGQ/export?format=csv"
-
-def extrair_inspetores(texto):
-    if pd.isna(texto):
-        return []
-    return [nome.strip().upper() for nome in str(texto).split(",") if nome.strip()]
 
 @st.cache_data
 def carregar_dados(url: str):
@@ -66,26 +54,108 @@ def carregar_dados(url: str):
     col_data = [c for c in df.columns if "data" in c.lower()][0]
     df[col_data] = pd.to_datetime(df[col_data], dayfirst=True, errors="coerce")
 
-    # Cria colunas auxiliares de tempo
+    # Colunas auxiliares de tempo
     df["DATA"] = df[col_data]
     df["ANO"] = df["DATA"].dt.year
     df["MES"] = df["DATA"].dt.month
     df["ANO_MES"] = df["DATA"].dt.to_period("M").astype(str)  # ex: 2025-01
     df["MES_ANO_LABEL"] = df["DATA"].dt.strftime("%b/%Y")     # ex: Jan/2025
 
-    # Trata lista de inspetores
+    # Lista de inspetores
     df["INSPETOR_LISTA"] = df["EQUIPE/INSPETOR"].apply(extrair_inspetores)
 
-    # Normaliza campo de liberação para facilitar análise
+    # Normaliza campo de liberação
     df["LIBERADO_FLAG"] = df["O ESTABELECIMENTO FOI LIBERADO"].str.upper().fillna("")
     df["LIBERADO_BIN"] = df["LIBERADO_FLAG"].apply(lambda x: 1 if x == "SIM" else 0)
 
-    return df, col_data
+    # Cria um dataframe com todos os nomes de inspetores em linhas
+    df_insp_all = df.explode("INSPETOR_LISTA")
+    df_insp_all = df_insp_all[
+        df_insp_all["INSPETOR_LISTA"].notna() & (df_insp_all["INSPETOR_LISTA"] != "")
+    ]
 
-df, col_data = carregar_dados(URL_DADOS)
+    # Base de perfis de inspetores
+    inspetores_unicos = sorted(df_insp_all["INSPETOR_LISTA"].unique().tolist())
+    perfis = []
+    for nome in inspetores_unicos:
+        username = gerar_username(nome)
+        if username:  # evita vazio
+            perfis.append(
+                {
+                    "INSPETOR_NOME": nome,
+                    "USERNAME": username,
+                    "PASSWORD": "Visa@25*"  # senha padrão
+                }
+            )
+    df_perfis = pd.DataFrame(perfis)
+
+    return df, col_data, df_perfis
+
+df, col_data, df_perfis = carregar_dados(URL_DADOS)
 
 # ======================================================
-# 🧠 BARRA LATERAL - FILTROS
+# 🔐 LOGIN POR PERFIL
+# ======================================================
+def login():
+    st.title("🔐 Painel da Vigilância Sanitária de Ipojuca")
+    st.subheader("Acesso Restrito - Perfis de Inspetores")
+
+    with st.form("login_form"):
+        username = st.text_input("Usuário (ex: alessandra.nascimento)")
+        password = st.text_input("Senha", type="password")
+        submit = st.form_submit_button("Entrar")
+
+    if submit:
+        username = username.strip().lower()
+        # Perfil admin com visão geral
+        if username == "admin" and password == "Ipojuca@2025*":
+            st.session_state["autenticado"] = True
+            st.session_state["perfil"] = "admin"
+            st.session_state["usuario"] = "admin"
+            st.session_state["inspetor_nome"] = "ADMIN"
+            st.success("✅ Login realizado com sucesso (ADMIN)!")
+            st.rerun()
+        else:
+            # Verifica se existe esse usuário na base de perfis
+            linha = df_perfis[df_perfis["USERNAME"] == username]
+            if not linha.empty and password == linha.iloc[0]["PASSWORD"]:
+                st.session_state["autenticado"] = True
+                st.session_state["perfil"] = "inspetor"
+                st.session_state["usuario"] = username
+                st.session_state["inspetor_nome"] = linha.iloc[0]["INSPETOR_NOME"]
+                st.success(f"✅ Login realizado com sucesso! Bem-vindo(a), {linha.iloc[0]['INSPETOR_NOME'].title()}")
+                st.rerun()
+            else:
+                st.error("❌ Usuário ou senha incorretos.")
+
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+    st.session_state["perfil"] = None
+    st.session_state["usuario"] = None
+    st.session_state["inspetor_nome"] = None
+
+if not st.session_state["autenticado"]:
+    login()
+    st.stop()
+
+# ======================================================
+# 🌐 CONTEXTO DO USUÁRIO LOGADO
+# ======================================================
+perfil = st.session_state["perfil"]       # "admin" ou "inspetor"
+usuario = st.session_state["usuario"]     # username
+inspetor_logado = st.session_state["inspetor_nome"]  # nome oficial em maiúsculo (para filtro)
+
+# Título principal após login
+if perfil == "admin":
+    st.title("🦠 Painel de Produção - VISA Ipojuca (ADMIN)")
+else:
+    st.title(f"🦠 Painel de Produção - VISA Ipojuca | {inspetor_logado.title()}")
+
+st.caption(f"👤 Usuário logado: **{usuario}** | Perfil: **{perfil.upper()}**")
+
+# ======================================================
+# 🧠 BARRA LATERAL - FILTROS GERAIS
+# (ADMIN vê tudo, INSPETOR vê só suas inspeções)
 # ======================================================
 st.sidebar.header("🧠 Filtros")
 
@@ -107,7 +177,7 @@ data_range = st.sidebar.date_input(
     max_value=data_max
 )
 
-# 🔗 Filtros adicionais
+# 🔗 Filtros adicionais (apenas para ADMIN faz sentido filtrar por inspetor)
 turno = st.sidebar.multiselect("🕑 Turno", sorted(df["TURNO"].dropna().unique()))
 localidade = st.sidebar.multiselect("📍 Localidade", sorted(df["LOCALIDADE"].dropna().unique()))
 estabelecimento = st.sidebar.multiselect("🏢 Estabelecimento", sorted(df["ESTABELECIMENTO"].dropna().unique()))
@@ -116,8 +186,13 @@ class_risco = st.sidebar.multiselect("⚠️ Classificação de Risco", sorted(d
 motivacao = st.sidebar.multiselect("🎯 Motivação", sorted(df["MOTIVAÇÃO"].dropna().unique()))
 status = st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df["O ESTABELECIMENTO FOI LIBERADO"].dropna().unique()))
 
-todos_inspetores = sorted(set(sum(df["INSPETOR_LISTA"].tolist(), [])))
-inspetores_sel = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
+if perfil == "admin":
+    # Admin pode filtrar por qualquer inspetor
+    todos_inspetores = sorted(set(sum(df["INSPETOR_LISTA"].tolist(), [])))
+    inspetores_sel = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
+else:
+    # Inspetor comum não escolhe outros; o filtro é fixo nele mesmo
+    inspetores_sel = [inspetor_logado]
 
 # ======================================================
 # 🔍 APLICAR FILTROS
@@ -180,16 +255,29 @@ if len(estabelecimento) == 1:
 
 # ======================================================
 # 🧱 LAYOUT PRINCIPAL EM ABAS
+# (Se inspetor comum, escondemos abas que não fazem sentido)
 # ======================================================
-aba_geral, aba_inspetores, aba_coordenacao, aba_detalhes, aba_download = st.tabs(
-    ["📊 Visão Geral", "🕵️‍♂️ Painel dos Inspetores", "👥 Coordenações", "📑 Tabelas Detalhadas", "📥 Download"]
-)
+if perfil == "admin":
+    abas = st.tabs(
+        ["📊 Visão Geral", "🕵️‍♂️ Painel dos Inspetores", "👥 Coordenações", "📑 Tabelas Detalhadas", "📥 Download"]
+    )
+    aba_geral, aba_inspetores, aba_coordenacao, aba_detalhes, aba_download = abas
+else:
+    abas = st.tabs(
+        ["📊 Minha Produção", "📑 Minhas Inspeções", "📥 Download"]
+    )
+    aba_geral, aba_detalhes, aba_download = abas
+    aba_inspetores = None
+    aba_coordenacao = None
 
 # ======================================================
-# 📊 VISÃO GERAL
+# 📊 VISÃO GERAL / MINHA PRODUÇÃO
 # ======================================================
 with aba_geral:
-    st.subheader("📊 Indicadores Gerais do Período Selecionado")
+    if perfil == "admin":
+        st.subheader("📊 Indicadores Gerais do Período Selecionado")
+    else:
+        st.subheader("📊 Minha Produção no Período Selecionado")
 
     total_inspecoes = len(df_filtrado)
     total_estabelecimentos = df_filtrado["ESTABELECIMENTO"].nunique()
@@ -203,9 +291,14 @@ with aba_geral:
     )
 
     col_kpi1, col_kpi2, col_kpi3, col_kpi4 = st.columns(4)
-    col_kpi1.metric("Total de Inspeções", f"{total_inspecoes}")
+    if perfil == "admin":
+        col_kpi1.metric("Total de Inspeções", f"{total_inspecoes}")
+        col_kpi3.metric("Inspetores Envolvidos", f"{total_inspetores_env}")
+    else:
+        col_kpi1.metric("Minhas Inspeções", f"{total_inspecoes}")
+        col_kpi3.metric("Estabelecimentos Atendidos", f"{total_estabelecimentos}")
+
     col_kpi2.metric("Estabelecimentos Únicos", f"{total_estabelecimentos}")
-    col_kpi3.metric("Inspetores Envolvidos", f"{total_inspetores_env}")
     col_kpi4.metric("Taxa de Liberação (%)", f"{taxa_liberacao:.1f}%")
 
     st.markdown("### 📈 Tendências e Distribuições")
@@ -216,11 +309,14 @@ with aba_geral:
     with col1:
         prod_por_data = df_filtrado.groupby("DATA").size().reset_index(name="Inspeções")
         if not prod_por_data.empty:
+            titulo = "📅 Produção Diária no Período"
+            if perfil != "admin":
+                titulo = "📅 Minhas Inspeções por Dia"
             graf1 = px.bar(
                 prod_por_data,
                 x="DATA",
                 y="Inspeções",
-                title="📅 Produção Diária no Período"
+                title=titulo
             )
             graf1.update_layout(xaxis_title="Data", yaxis_title="Nº de inspeções")
             st.plotly_chart(graf1, use_container_width=True)
@@ -281,290 +377,192 @@ with aba_geral:
         else:
             st.info("Sem dados de risco/localidade para o filtro atual.")
 
-    # ⚠️ Top estabelecimentos mais visitados
-    st.markdown("### 🏢 Estabelecimentos Mais Fiscalizados no Período")
-    top_estab = (
-        df_filtrado["ESTABELECIMENTO"]
-        .value_counts()
-        .reset_index()
-        .rename(columns={"index": "Estabelecimento", "ESTABELECIMENTO": "Inspeções"})
-        .head(10)
-    )
-    if not top_estab.empty:
-        graf_top = px.bar(
-            top_estab,
-            x="Estabelecimento",
-            y="Inspeções",
-            title="🏢 Top 10 Estabelecimentos Mais Fiscalizados",
-            text="Inspeções"
-        )
-        graf_top.update_traces(textposition="outside")
-        graf_top.update_layout(xaxis_title="Estabelecimento", yaxis_title="Nº de inspeções")
-        st.plotly_chart(graf_top, use_container_width=True)
-    else:
-        st.info("Sem dados de estabelecimentos para o filtro atual.")
-
 # ======================================================
-# 🕵️‍♂️ PAINEL DOS INSPETORES
+# 🕵️‍♂️ PAINEL DOS INSPETORES (APENAS ADMIN)
 # ======================================================
-with aba_inspetores:
-    st.subheader("🕵️‍♂️ Indicadores de Desempenho por Inspetor")
+if perfil == "admin" and aba_inspetores is not None:
+    with aba_inspetores:
+        st.subheader("🕵️‍♂️ Indicadores de Desempenho por Inspetor")
 
-    # Explodir a lista de inspetores
-    df_insp = df_filtrado.explode("INSPETOR_LISTA")
-    df_insp = df_insp[
-        df_insp["INSPETOR_LISTA"].notna() & (df_insp["INSPETOR_LISTA"] != "")
-    ]
+        df_insp = df_filtrado.explode("INSPETOR_LISTA")
+        df_insp = df_insp[
+            df_insp["INSPETOR_LISTA"].notna() & (df_insp["INSPETOR_LISTA"] != "")
+        ]
 
-    if df_insp.empty:
-        st.info("Nenhum dado de inspetor encontrado para o filtro atual.")
-    else:
-        dias_periodo = df_filtrado["DATA"].dt.date.nunique()
-        dias_periodo = dias_periodo if dias_periodo > 0 else 1
+        if df_insp.empty:
+            st.info("Nenhum dado de inspetor encontrado para o filtro atual.")
+        else:
+            dias_periodo = df_filtrado["DATA"].dt.date.nunique()
+            dias_periodo = dias_periodo if dias_periodo > 0 else 1
 
-        grp = df_insp.groupby("INSPETOR_LISTA")
+            grp = df_insp.groupby("INSPETOR_LISTA")
 
-        desempenho_insp = grp.agg(
-            INSPECOES=("INSPETOR_LISTA", "count"),
-            LIBERADOS=("LIBERADO_BIN", "sum"),
-            ESTAB_UNICOS=("ESTABELECIMENTO", "nunique")
-        ).reset_index()
+            desempenho_insp = grp.agg(
+                INSPECOES=("INSPETOR_LISTA", "count"),
+                LIBERADOS=("LIBERADO_BIN", "sum"),
+                ESTAB_UNICOS=("ESTABELECIMENTO", "nunique")
+            ).reset_index()
 
-        desempenho_insp["TAXA_LIBERACAO_%"] = (
-            desempenho_insp["LIBERADOS"] / desempenho_insp["INSPECOES"] * 100
-        ).round(1)
+            desempenho_insp["TAXA_LIBERACAO_%"] = (
+                desempenho_insp["LIBERADOS"] / desempenho_insp["INSPECOES"] * 100
+            ).round(1)
 
-        desempenho_insp["INSPECOES_DIA_MEDIO"] = (
-            desempenho_insp["INSPECOES"] / dias_periodo
-        ).round(2)
+            desempenho_insp["INSPECOES_DIA_MEDIO"] = (
+                desempenho_insp["INSPECOES"] / dias_periodo
+            ).round(2)
 
-        desempenho_insp["PARTICIPACAO_%"] = (
-            desempenho_insp["INSPECOES"] / desempenho_insp["INSPECOES"].sum() * 100
-        ).round(1)
+            desempenho_insp["PARTICIPACAO_%"] = (
+                desempenho_insp["INSPECOES"] / desempenho_insp["INSPECOES"].sum() * 100
+            ).round(1)
 
-        desempenho_insp = desempenho_insp.sort_values("INSPECOES", ascending=False)
+            desempenho_insp = desempenho_insp.sort_values("INSPECOES", ascending=False)
 
-        # KPIs gerais dos inspetores
-        col_a, col_b, col_c = st.columns(3)
-        col_a.metric("Total de Inspetores Ativos no Período", f"{desempenho_insp['INSPETOR_LISTA'].nunique()}")
-        col_b.metric("Maior Produção (Inspetor)", f"{desempenho_insp.iloc[0]['INSPECOES']} insp.")
-        col_c.metric(
-            "Média de Inspeções por Inspetor",
-            f"{desempenho_insp['INSPECOES'].mean():.1f}"
-        )
-
-        st.markdown("### 📋 Tabela de Desempenho por Inspetor")
-        st.dataframe(desempenho_insp, use_container_width=True)
-
-        # Gráfico de barras - produção por inspetor
-        fig_insp = px.bar(
-            desempenho_insp,
-            x="INSPETOR_LISTA",
-            y="INSPECOES",
-            title="🏆 Produção por Inspetor (Período Selecionado)",
-            text="INSPECOES"
-        )
-        fig_insp.update_traces(textposition="outside")
-        fig_insp.update_layout(xaxis_title="Inspetor", yaxis_title="Nº de inspeções")
-        st.plotly_chart(fig_insp, use_container_width=True)
-
-        # --------------------------------------------------
-        # 📆 Ranking Mensal de Produção dos Inspetores
-        # --------------------------------------------------
-        st.markdown("### 📆 Ranking Mensal de Produção dos Inspetores")
-
-        prod_mensal = (
-            df_insp
-            .groupby(["ANO_MES", "MES_ANO_LABEL", "INSPETOR_LISTA"])
-            .size()
-            .reset_index(name="INSPECOES")
-        )
-
-        if not prod_mensal.empty:
-            meses_disponiveis = prod_mensal["MES_ANO_LABEL"].unique().tolist()
-            meses_disponiveis = sorted(
-                meses_disponiveis,
-                key=lambda x: datetime.strptime(x, "%b/%Y")
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Total de Inspetores Ativos no Período", f"{desempenho_insp['INSPETOR_LISTA'].nunique()}")
+            col_b.metric("Maior Produção (Inspetor)", f"{desempenho_insp.iloc[0]['INSPECOES']} insp.")
+            col_c.metric(
+                "Média de Inspeções por Inspetor",
+                f"{desempenho_insp['INSPECOES'].mean():.1f}"
             )
 
-            mes_label_selecionado = st.selectbox(
-                "Selecione o Mês/Ano para ver o ranking:",
-                meses_disponiveis
-            )
+            st.markdown("### 📋 Tabela de Desempenho por Inspetor")
+            st.dataframe(desempenho_insp, use_container_width=True)
 
-            prod_mes_sel = prod_mensal[prod_mensal["MES_ANO_LABEL"] == mes_label_selecionado]
-            ranking_mes = (
-                prod_mes_sel
-                .sort_values("INSPECOES", ascending=False)
-                .reset_index(drop=True)
-            )
-            ranking_mes["POSICAO"] = ranking_mes.index + 1
-
-            col_r1, col_r2 = st.columns([1, 1.5])
-
-            with col_r1:
-                st.markdown(f"**Ranking de Inspetores - {mes_label_selecionado}**")
-                st.dataframe(
-                    ranking_mes[["POSICAO", "INSPETOR_LISTA", "INSPECOES"]],
-                    use_container_width=True
-                )
-
-            with col_r2:
-                fig_rank = px.bar(
-                    ranking_mes,
-                    x="INSPETOR_LISTA",
-                    y="INSPECOES",
-                    title=f"🏅 Ranking de Produção - {mes_label_selecionado}",
-                    text="INSPECOES"
-                )
-                fig_rank.update_traces(textposition="outside")
-                fig_rank.update_layout(xaxis_title="Inspetor", yaxis_title="Nº de inspeções")
-                st.plotly_chart(fig_rank, use_container_width=True)
-
-            # Evolução mensal (todos meses x inspetor)
-            fig_evol = px.line(
-                prod_mensal.sort_values("ANO_MES"),
-                x="MES_ANO_LABEL",
+            fig_insp = px.bar(
+                desempenho_insp,
+                x="INSPETOR_LISTA",
                 y="INSPECOES",
-                color="INSPETOR_LISTA",
-                markers=True,
-                title="📈 Evolução Mensal de Produção por Inspetor"
+                title="🏆 Produção por Inspetor (Período Selecionado)",
+                text="INSPECOES"
             )
-            fig_evol.update_layout(xaxis_title="Mês/Ano", yaxis_title="Nº de inspeções")
-            st.plotly_chart(fig_evol, use_container_width=True)
+            fig_insp.update_traces(textposition="outside")
+            fig_insp.update_layout(xaxis_title="Inspetor", yaxis_title="Nº de inspeções")
+            st.plotly_chart(fig_insp, use_container_width=True)
 
-        # --------------------------------------------------
-        # 🧍‍♂️ Painel Individual do Inspetor
-        # --------------------------------------------------
-        st.markdown("### 🧍‍♂️ Painel Individual do Inspetor")
+            # Ranking mensal
+            st.markdown("### 📆 Ranking Mensal de Produção dos Inspetores")
 
-        insp_escolha = st.selectbox(
-            "Selecione um inspetor para visualizar detalhes:",
-            sorted(desempenho_insp["INSPETOR_LISTA"].unique())
-        )
-
-        df_insp_ind = df_insp[df_insp["INSPETOR_LISTA"] == insp_escolha]
-
-        if not df_insp_ind.empty:
-            total_insp_ind = len(df_insp_ind)
-            estab_unicos_ind = df_insp_ind["ESTABELECIMENTO"].nunique()
-            taxa_lib_ind = (
-                df_insp_ind["LIBERADO_BIN"].sum() / total_insp_ind * 100
-                if total_insp_ind > 0 else 0
+            prod_mensal = (
+                df_insp
+                .groupby(["ANO_MES", "MES_ANO_LABEL", "INSPETOR_LISTA"])
+                .size()
+                .reset_index(name="INSPECOES")
             )
 
-            col_i1, col_i2, col_i3 = st.columns(3)
-            col_i1.metric("Total de Inspeções (Inspetor)", f"{total_insp_ind}")
-            col_i2.metric("Estabelecimentos Atendidos", f"{estab_unicos_ind}")
-            col_i3.metric("Taxa de Liberação (%)", f"{taxa_lib_ind:.1f}%")
-
-            # Linha do tempo de inspeções do inspetor
-            prod_insp_data = (
-                df_insp_ind.groupby("DATA").size().reset_index(name="Inspeções")
-            )
-            fig_timeline = px.bar(
-                prod_insp_data,
-                x="DATA",
-                y="Inspeções",
-                title=f"📅 Linha do Tempo de Inspeções - {insp_escolha}"
-            )
-            fig_timeline.update_layout(xaxis_title="Data", yaxis_title="Nº de inspeções")
-            st.plotly_chart(fig_timeline, use_container_width=True)
-
-            # Distribuição por risco do inspetor
-            risco_insp = (
-                df_insp_ind["CLASSIFICAÇÃO DE RISCO"]
-                .value_counts()
-                .reset_index()
-                .rename(columns={"index": "Risco", "CLASSIFICAÇÃO DE RISCO": "Quantidade"})
-            )
-            if not risco_insp.empty:
-                fig_risco_insp = px.pie(
-                    risco_insp,
-                    names="Risco",
-                    values="Quantidade",
-                    title=f"⚠️ Perfil de Risco Atendido - {insp_escolha}"
+            if not prod_mensal.empty:
+                meses_disponiveis = prod_mensal["MES_ANO_LABEL"].unique().tolist()
+                meses_disponiveis = sorted(
+                    meses_disponiveis,
+                    key=lambda x: datetime.strptime(x, "%b/%Y")
                 )
-                st.plotly_chart(fig_risco_insp, use_container_width=True)
 
-            # Distribuição de motivação do inspetor
-            motiv_insp = (
-                df_insp_ind["MOTIVAÇÃO"]
-                .value_counts()
-                .reset_index()
-                .rename(columns={"index": "Motivação", "MOTIVAÇÃO": "Quantidade"})
-            )
-            if not motiv_insp.empty:
-                fig_motiv_insp = px.bar(
-                    motiv_insp,
-                    x="Motivação",
-                    y="Quantidade",
-                    title=f"🎯 Distribuição de Motivação - {insp_escolha}",
-                    text="Quantidade"
+                mes_label_selecionado = st.selectbox(
+                    "Selecione o Mês/Ano para ver o ranking:",
+                    meses_disponiveis
                 )
-                fig_motiv_insp.update_traces(textposition="outside")
-                fig_motiv_insp.update_layout(xaxis_title="Motivação", yaxis_title="Nº de inspeções")
-                st.plotly_chart(fig_motiv_insp, use_container_width=True)
+
+                prod_mes_sel = prod_mensal[prod_mensal["MES_ANO_LABEL"] == mes_label_selecionado]
+                ranking_mes = (
+                    prod_mes_sel
+                    .sort_values("INSPECOES", ascending=False)
+                    .reset_index(drop=True)
+                )
+                ranking_mes["POSICAO"] = ranking_mes.index + 1
+
+                col_r1, col_r2 = st.columns([1, 1.5])
+
+                with col_r1:
+                    st.markdown(f"**Ranking de Inspetores - {mes_label_selecionado}**")
+                    st.dataframe(
+                        ranking_mes[["POSICAO", "INSPETOR_LISTA", "INSPECOES"]],
+                        use_container_width=True
+                    )
+
+                with col_r2:
+                    fig_rank = px.bar(
+                        ranking_mes,
+                        x="INSPETOR_LISTA",
+                        y="INSPECOES",
+                        title=f"🏅 Ranking de Produção - {mes_label_selecionado}",
+                        text="INSPECOES"
+                    )
+                    fig_rank.update_traces(textposition="outside")
+                    fig_rank.update_layout(xaxis_title="Inspetor", yaxis_title="Nº de inspeções")
+                    st.plotly_chart(fig_rank, use_container_width=True)
+
+                fig_evol = px.line(
+                    prod_mensal.sort_values("ANO_MES"),
+                    x="MES_ANO_LABEL",
+                    y="INSPECOES",
+                    color="INSPETOR_LISTA",
+                    markers=True,
+                    title="📈 Evolução Mensal de Produção por Inspetor"
+                )
+                fig_evol.update_layout(xaxis_title="Mês/Ano", yaxis_title="Nº de inspeções")
+                st.plotly_chart(fig_evol, use_container_width=True)
 
 # ======================================================
-# 👥 VISÃO POR COORDENAÇÃO
+# 👥 VISÃO POR COORDENAÇÃO (APENAS ADMIN)
 # ======================================================
-with aba_coordenacao:
-    st.subheader("👥 Indicadores por Coordenação")
+if perfil == "admin" and aba_coordenacao is not None:
+    with aba_coordenacao:
+        st.subheader("👥 Indicadores por Coordenação")
 
-    if df_filtrado.empty:
-        st.info("Sem dados para o filtro atual.")
-    else:
-        grp_coord = df_filtrado.groupby("COORDENAÇÃO").agg(
-            INSPECOES=("COORDENAÇÃO", "count"),
-            ESTAB_UNICOS=("ESTABELECIMENTO", "nunique"),
-            LIBERADOS=("LIBERADO_BIN", "sum")
-        ).reset_index()
+        if df_filtrado.empty:
+            st.info("Sem dados para o filtro atual.")
+        else:
+            grp_coord = df_filtrado.groupby("COORDENAÇÃO").agg(
+                INSPECOES=("COORDENAÇÃO", "count"),
+                ESTAB_UNICOS=("ESTABELECIMENTO", "nunique"),
+                LIBERADOS=("LIBERADO_BIN", "sum")
+            ).reset_index()
 
-        grp_coord["TAXA_LIBERACAO_%"] = (
-            grp_coord["LIBERADOS"] / grp_coord["INSPECOES"] * 100
-        ).round(1)
+            grp_coord["TAXA_LIBERACAO_%"] = (
+                grp_coord["LIBERADOS"] / grp_coord["INSPECOES"] * 100
+            ).round(1)
 
-        grp_coord = grp_coord.sort_values("INSPECOES", ascending=False)
+            grp_coord = grp_coord.sort_values("INSPECOES", ascending=False)
 
-        st.markdown("### 📋 Tabela de Coordenações")
-        st.dataframe(grp_coord, use_container_width=True)
+            st.markdown("### 📋 Tabela de Coordenações")
+            st.dataframe(grp_coord, use_container_width=True)
 
-        fig_coord = px.bar(
-            grp_coord,
-            x="COORDENAÇÃO",
-            y="INSPECOES",
-            title="👥 Produção por Coordenação",
-            text="INSPECOES"
-        )
-        fig_coord.update_traces(textposition="outside")
-        fig_coord.update_layout(xaxis_title="Coordenação", yaxis_title="Nº de inspeções")
-        st.plotly_chart(fig_coord, use_container_width=True)
-
-        # Coordenação x Classificação de risco
-        risco_coord = (
-            df_filtrado
-            .groupby(["COORDENAÇÃO", "CLASSIFICAÇÃO DE RISCO"])
-            .size()
-            .reset_index(name="Quantidade")
-        )
-        if not risco_coord.empty:
-            fig_risco_coord = px.bar(
-                risco_coord,
+            fig_coord = px.bar(
+                grp_coord,
                 x="COORDENAÇÃO",
-                y="Quantidade",
-                color="CLASSIFICAÇÃO DE RISCO",
-                title="⚠️ Mix de Risco por Coordenação",
-                barmode="stack"
+                y="INSPECOES",
+                title="👥 Produção por Coordenação",
+                text="INSPECOES"
             )
-            fig_risco_coord.update_layout(xaxis_title="Coordenação", yaxis_title="Nº de inspeções")
-            st.plotly_chart(fig_risco_coord, use_container_width=True)
+            fig_coord.update_traces(textposition="outside")
+            fig_coord.update_layout(xaxis_title="Coordenação", yaxis_title="Nº de inspeções")
+            st.plotly_chart(fig_coord, use_container_width=True)
+
+            risco_coord = (
+                df_filtrado
+                .groupby(["COORDENAÇÃO", "CLASSIFICAÇÃO DE RISCO"])
+                .size()
+                .reset_index(name="Quantidade")
+            )
+            if not risco_coord.empty:
+                fig_risco_coord = px.bar(
+                    risco_coord,
+                    x="COORDENAÇÃO",
+                    y="Quantidade",
+                    color="CLASSIFICAÇÃO DE RISCO",
+                    title="⚠️ Mix de Risco por Coordenação",
+                    barmode="stack"
+                )
+                fig_risco_coord.update_layout(xaxis_title="Coordenação", yaxis_title="Nº de inspeções")
+                st.plotly_chart(fig_risco_coord, use_container_width=True)
 
 # ======================================================
 # 📑 TABELAS DETALHADAS
 # ======================================================
 with aba_detalhes:
-    st.subheader("📑 Visualização Completa dos Dados Filtrados")
+    if perfil == "admin":
+        st.subheader("📑 Visualização Completa dos Dados Filtrados")
+    else:
+        st.subheader("📑 Minhas Inspeções Detalhadas")
 
     colunas_tabela = [
         "DATA",
@@ -586,7 +584,10 @@ with aba_detalhes:
 # 📥 DOWNLOAD
 # ======================================================
 with aba_download:
-    st.subheader("📥 Download dos Dados")
+    if perfil == "admin":
+        st.subheader("📥 Download dos Dados Filtrados")
+    else:
+        st.subheader("📥 Download das Minhas Inspeções")
 
     def gerar_excel_download(dataframe):
         output = BytesIO()
@@ -594,10 +595,8 @@ with aba_download:
             dataframe.to_excel(writer, index=False, sheet_name="Dados Filtrados")
         return output.getvalue()
 
-    st.markdown("Faça o download dos dados filtrados para análise mais detalhada em Excel/Power BI:")
-
     st.download_button(
-        label="📥 Download dos Dados Filtrados (Excel)",
+        label="📥 Download (Excel)",
         data=gerar_excel_download(df_filtrado.drop(columns=["INSPETOR_LISTA"], errors="ignore")),
         file_name="dados_filtrados_visa.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
