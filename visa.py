@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # ======================================================
-# 🔧 FUNÇÕES AUXILIARES DE PERFIL
+# 🔧 FUNÇÕES AUXILIARES
 # ======================================================
 def extrair_inspetores(texto):
     if pd.isna(texto):
@@ -23,7 +23,7 @@ def extrair_inspetores(texto):
 
 def gerar_username(nome_completo: str) -> str:
     """
-    Gera username no formato primeiro.ultimo em minúsculo
+    Gera username no formato primeiro.ultimo em minúsculo.
     Ex: 'ALESSANDRA DO NASCIMENTO' -> 'alessandra.nascimento'
         'MAVIAEL VICTOR DE BARROS' -> 'maviael.barros'
     """
@@ -58,8 +58,8 @@ def carregar_dados(url: str):
     df["DATA"] = df[col_data]
     df["ANO"] = df["DATA"].dt.year
     df["MES"] = df["DATA"].dt.month
-    df["ANO_MES"] = df["DATA"].dt.to_period("M").astype(str)  # ex: 2025-01
-    df["MES_ANO_LABEL"] = df["DATA"].dt.strftime("%b/%Y")     # ex: Jan/2025
+    df["ANO_MES"] = df["DATA"].dt.to_period("M").astype(str)
+    df["MES_ANO_LABEL"] = df["DATA"].dt.strftime("%b/%Y")
 
     # Lista de inspetores
     df["INSPETOR_LISTA"] = df["EQUIPE/INSPETOR"].apply(extrair_inspetores)
@@ -68,23 +68,22 @@ def carregar_dados(url: str):
     df["LIBERADO_FLAG"] = df["O ESTABELECIMENTO FOI LIBERADO"].str.upper().fillna("")
     df["LIBERADO_BIN"] = df["LIBERADO_FLAG"].apply(lambda x: 1 if x == "SIM" else 0)
 
-    # Cria um dataframe com todos os nomes de inspetores em linhas
+    # Base de perfis (um por inspetor)
     df_insp_all = df.explode("INSPETOR_LISTA")
     df_insp_all = df_insp_all[
         df_insp_all["INSPETOR_LISTA"].notna() & (df_insp_all["INSPETOR_LISTA"] != "")
     ]
 
-    # Base de perfis de inspetores
     inspetores_unicos = sorted(df_insp_all["INSPETOR_LISTA"].unique().tolist())
     perfis = []
     for nome in inspetores_unicos:
         username = gerar_username(nome)
-        if username:  # evita vazio
+        if username:
             perfis.append(
                 {
-                    "INSPETOR_NOME": nome,
-                    "USERNAME": username,
-                    "PASSWORD": "Visa@25*"  # senha padrão
+                    "INSPETOR_NOME": nome,           # Ex: 'ALESSANDRA DO NASCIMENTO'
+                    "USERNAME": username,            # Ex: 'alessandra.nascimento'
+                    "PASSWORD": "Visa@25*"           # senha padrão
                 }
             )
     df_perfis = pd.DataFrame(perfis)
@@ -98,7 +97,7 @@ df, col_data, df_perfis = carregar_dados(URL_DADOS)
 # ======================================================
 def login():
     st.title("🔐 Painel da Vigilância Sanitária de Ipojuca")
-    st.subheader("Acesso Restrito - Perfis de Inspetores")
+    st.subheader("Acesso Restrito - Perfis de Usuário")
 
     with st.form("login_form"):
         username = st.text_input("Usuário (ex: alessandra.nascimento)")
@@ -107,7 +106,8 @@ def login():
 
     if submit:
         username = username.strip().lower()
-        # Perfil admin com visão geral
+
+        # ADMIN
         if username == "admin" and password == "Ipojuca@2025*":
             st.session_state["autenticado"] = True
             st.session_state["perfil"] = "admin"
@@ -116,14 +116,16 @@ def login():
             st.success("✅ Login realizado com sucesso (ADMIN)!")
             st.rerun()
         else:
-            # Verifica se existe esse usuário na base de perfis
+            # INSPETOR
             linha = df_perfis[df_perfis["USERNAME"] == username]
             if not linha.empty and password == linha.iloc[0]["PASSWORD"]:
                 st.session_state["autenticado"] = True
                 st.session_state["perfil"] = "inspetor"
                 st.session_state["usuario"] = username
                 st.session_state["inspetor_nome"] = linha.iloc[0]["INSPETOR_NOME"]
-                st.success(f"✅ Login realizado com sucesso! Bem-vindo(a), {linha.iloc[0]['INSPETOR_NOME'].title()}")
+                st.success(
+                    f"✅ Login realizado com sucesso! Bem-vindo(a), {linha.iloc[0]['INSPETOR_NOME'].title()}"
+                )
                 st.rerun()
             else:
                 st.error("❌ Usuário ou senha incorretos.")
@@ -141,11 +143,10 @@ if not st.session_state["autenticado"]:
 # ======================================================
 # 🌐 CONTEXTO DO USUÁRIO LOGADO
 # ======================================================
-perfil = st.session_state["perfil"]       # "admin" ou "inspetor"
-usuario = st.session_state["usuario"]     # username
-inspetor_logado = st.session_state["inspetor_nome"]  # nome oficial em maiúsculo (para filtro)
+perfil = st.session_state["perfil"]             # "admin" ou "inspetor"
+usuario = st.session_state["usuario"]           # username
+inspetor_logado = st.session_state["inspetor_nome"]  # nome em maiúsculo
 
-# Título principal após login
 if perfil == "admin":
     st.title("🦠 Painel de Produção - VISA Ipojuca (ADMIN)")
 else:
@@ -154,15 +155,13 @@ else:
 st.caption(f"👤 Usuário logado: **{usuario}** | Perfil: **{perfil.upper()}**")
 
 # ======================================================
-# 🧠 BARRA LATERAL - FILTROS GERAIS
-# (ADMIN vê tudo, INSPETOR vê só suas inspeções)
+# 🧠 BARRA LATERAL - FILTROS
 # ======================================================
 st.sidebar.header("🧠 Filtros")
 
-# 📅 Filtro de datas com pré-seleção do ano atual
+# 📅 Período
 data_min = df[col_data].min()
 data_max = df[col_data].max()
-
 ano_atual = datetime.now().year
 data_inicio_ano = pd.to_datetime(f"{ano_atual}-01-01")
 data_fim_ano = pd.to_datetime(f"{ano_atual}-12-31")
@@ -177,7 +176,6 @@ data_range = st.sidebar.date_input(
     max_value=data_max
 )
 
-# 🔗 Filtros adicionais (apenas para ADMIN faz sentido filtrar por inspetor)
 turno = st.sidebar.multiselect("🕑 Turno", sorted(df["TURNO"].dropna().unique()))
 localidade = st.sidebar.multiselect("📍 Localidade", sorted(df["LOCALIDADE"].dropna().unique()))
 estabelecimento = st.sidebar.multiselect("🏢 Estabelecimento", sorted(df["ESTABELECIMENTO"].dropna().unique()))
@@ -187,15 +185,14 @@ motivacao = st.sidebar.multiselect("🎯 Motivação", sorted(df["MOTIVAÇÃO"].
 status = st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df["O ESTABELECIMENTO FOI LIBERADO"].dropna().unique()))
 
 if perfil == "admin":
-    # Admin pode filtrar por qualquer inspetor
     todos_inspetores = sorted(set(sum(df["INSPETOR_LISTA"].tolist(), [])))
     inspetores_sel = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
 else:
-    # Inspetor comum não escolhe outros; o filtro é fixo nele mesmo
+    # inspetor comum sempre filtra em cima dele mesmo
     inspetores_sel = [inspetor_logado]
 
 # ======================================================
-# 🔍 APLICAR FILTROS
+# 🔍 APLICAR FILTROS (inclui restrição de perfil)
 # ======================================================
 df_filtrado = df.copy()
 
@@ -254,19 +251,16 @@ if len(estabelecimento) == 1:
     )
 
 # ======================================================
-# 🧱 LAYOUT PRINCIPAL EM ABAS
-# (Se inspetor comum, escondemos abas que não fazem sentido)
+# 🧱 ABAS (diferentes para admin x inspetor)
 # ======================================================
 if perfil == "admin":
-    abas = st.tabs(
+    aba_geral, aba_inspetores, aba_coordenacao, aba_detalhes, aba_download = st.tabs(
         ["📊 Visão Geral", "🕵️‍♂️ Painel dos Inspetores", "👥 Coordenações", "📑 Tabelas Detalhadas", "📥 Download"]
     )
-    aba_geral, aba_inspetores, aba_coordenacao, aba_detalhes, aba_download = abas
 else:
-    abas = st.tabs(
+    aba_geral, aba_detalhes, aba_download = st.tabs(
         ["📊 Minha Produção", "📑 Minhas Inspeções", "📥 Download"]
     )
-    aba_geral, aba_detalhes, aba_download = abas
     aba_inspetores = None
     aba_coordenacao = None
 
@@ -305,7 +299,7 @@ with aba_geral:
 
     col1, col2 = st.columns(2)
 
-    # 📅 Produção ao longo do período (por dia)
+    # 📅 Produção ao longo do período
     with col1:
         prod_por_data = df_filtrado.groupby("DATA").size().reset_index(name="Inspeções")
         if not prod_por_data.empty:
@@ -578,7 +572,10 @@ with aba_detalhes:
     ]
 
     colunas_existentes = [c for c in colunas_tabela if c in df_filtrado.columns]
-    st.dataframe(df_filtrado[colunas_existentes].sort_values("DATA", ascending=False), use_container_width=True)
+    st.dataframe(
+        df_filtrado[colunas_existentes].sort_values("DATA", ascending=False),
+        use_container_width=True
+    )
 
 # ======================================================
 # 📥 DOWNLOAD
