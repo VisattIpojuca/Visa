@@ -14,27 +14,48 @@ st.set_page_config(
 )
 
 # ======================================================
+# 👥 USUÁRIOS EXPLÍCITOS
+# ======================================================
+# ATENÇÃO:
+# - "nome_inspetor" deve ser IGUAL ao que aparece na planilha (campo EQUIPE/INSPETOR), em maiúsculo.
+# - "username" é o login (primeiro.ultimo em minúsculo).
+# - "senha" é a senha do usuário.
+# Adicione/ajuste aqui todos os inspetores.
+
+USUARIOS_INSPETORES = [
+    {
+        "nome_inspetor": "ALESSANDRA DO NASCIMENTO",
+        "username": "alessandra.nascimento",
+        "senha": "Visa@25*",
+    },
+    {
+        "nome_inspetor": "MAVIAEL VICTOR DE BARROS",
+        "username": "maviael.barros",
+        "senha": "Visa@25*",
+    },
+    # EXEMPLOS: preencha com todos os demais
+    # {
+    #     "nome_inspetor": "JOAO DA SILVA",
+    #     "username": "joao.silva",
+    #     "senha": "Visa@25*",
+    # },
+    # {
+    #     "nome_inspetor": "MARIA DE SOUZA",
+    #     "username": "maria.souza",
+    #     "senha": "Visa@25*",
+    # },
+]
+
+# Converte para DataFrame para facilitar busca
+df_perfis = pd.DataFrame(USUARIOS_INSPETORES)
+
+# ======================================================
 # 🔧 FUNÇÕES AUXILIARES
 # ======================================================
 def extrair_inspetores(texto):
     if pd.isna(texto):
         return []
     return [nome.strip().upper() for nome in str(texto).split(",") if nome.strip()]
-
-def gerar_username(nome_completo: str) -> str:
-    """
-    Gera username no formato primeiro.ultimo em minúsculo.
-    Ex: 'ALESSANDRA DO NASCIMENTO' -> 'alessandra.nascimento'
-        'MAVIAEL VICTOR DE BARROS' -> 'maviael.barros'
-    """
-    if not isinstance(nome_completo, str) or not nome_completo.strip():
-        return ""
-    partes = nome_completo.strip().lower().split()
-    if len(partes) == 1:
-        return partes[0]
-    primeiro = partes[0]
-    ultimo = partes[-1]
-    return f"{primeiro}.{ultimo}"
 
 # ======================================================
 # 📥 FONTE E CARREGAMENTO DOS DADOS
@@ -68,29 +89,9 @@ def carregar_dados(url: str):
     df["LIBERADO_FLAG"] = df["O ESTABELECIMENTO FOI LIBERADO"].str.upper().fillna("")
     df["LIBERADO_BIN"] = df["LIBERADO_FLAG"].apply(lambda x: 1 if x == "SIM" else 0)
 
-    # Base de perfis (um por inspetor)
-    df_insp_all = df.explode("INSPETOR_LISTA")
-    df_insp_all = df_insp_all[
-        df_insp_all["INSPETOR_LISTA"].notna() & (df_insp_all["INSPETOR_LISTA"] != "")
-    ]
+    return df, col_data
 
-    inspetores_unicos = sorted(df_insp_all["INSPETOR_LISTA"].unique().tolist())
-    perfis = []
-    for nome in inspetores_unicos:
-        username = gerar_username(nome)
-        if username:
-            perfis.append(
-                {
-                    "INSPETOR_NOME": nome,           # Ex: 'ALESSANDRA DO NASCIMENTO'
-                    "USERNAME": username,            # Ex: 'alessandra.nascimento'
-                    "PASSWORD": "Visa@25*"           # senha padrão
-                }
-            )
-    df_perfis = pd.DataFrame(perfis)
-
-    return df, col_data, df_perfis
-
-df, col_data, df_perfis = carregar_dados(URL_DADOS)
+df, col_data = carregar_dados(URL_DADOS)
 
 # ======================================================
 # 🔐 LOGIN POR PERFIL
@@ -105,10 +106,10 @@ def login():
         submit = st.form_submit_button("Entrar")
 
     if submit:
-        username = username.strip().lower()
+        username_norm = username.strip().lower()
 
-        # ADMIN
-        if username == "admin" and password == "Ipojuca@2025*":
+        # Perfil ADMIN
+        if username_norm == "admin" and password == "Ipojuca@2025*":
             st.session_state["autenticado"] = True
             st.session_state["perfil"] = "admin"
             st.session_state["usuario"] = "admin"
@@ -116,15 +117,15 @@ def login():
             st.success("✅ Login realizado com sucesso (ADMIN)!")
             st.rerun()
         else:
-            # INSPETOR
-            linha = df_perfis[df_perfis["USERNAME"] == username]
-            if not linha.empty and password == linha.iloc[0]["PASSWORD"]:
+            # Perfil INSPETOR (buscar na lista explícita)
+            linha = df_perfis[df_perfis["username"].str.lower() == username_norm]
+            if not linha.empty and password == linha.iloc[0]["senha"]:
                 st.session_state["autenticado"] = True
                 st.session_state["perfil"] = "inspetor"
-                st.session_state["usuario"] = username
-                st.session_state["inspetor_nome"] = linha.iloc[0]["INSPETOR_NOME"]
+                st.session_state["usuario"] = username_norm
+                st.session_state["inspetor_nome"] = linha.iloc[0]["nome_inspetor"]
                 st.success(
-                    f"✅ Login realizado com sucesso! Bem-vindo(a), {linha.iloc[0]['INSPETOR_NOME'].title()}"
+                    f"✅ Login realizado com sucesso! Bem-vindo(a), {linha.iloc[0]['nome_inspetor'].title()}"
                 )
                 st.rerun()
             else:
@@ -145,7 +146,7 @@ if not st.session_state["autenticado"]:
 # ======================================================
 perfil = st.session_state["perfil"]             # "admin" ou "inspetor"
 usuario = st.session_state["usuario"]           # username
-inspetor_logado = st.session_state["inspetor_nome"]  # nome em maiúsculo
+inspetor_logado = st.session_state["inspetor_nome"]  # nome oficial para filtro
 
 if perfil == "admin":
     st.title("🦠 Painel de Produção - VISA Ipojuca (ADMIN)")
@@ -184,11 +185,13 @@ class_risco = st.sidebar.multiselect("⚠️ Classificação de Risco", sorted(d
 motivacao = st.sidebar.multiselect("🎯 Motivação", sorted(df["MOTIVAÇÃO"].dropna().unique()))
 status = st.sidebar.multiselect("✅ Status do Estabelecimento", sorted(df["O ESTABELECIMENTO FOI LIBERADO"].dropna().unique()))
 
+# Campo de inspetor na barra lateral:
 if perfil == "admin":
+    # Admin pode escolher qualquer inspetor (ou todos)
     todos_inspetores = sorted(set(sum(df["INSPETOR_LISTA"].tolist(), [])))
     inspetores_sel = st.sidebar.multiselect("🕵️‍♂️ Inspetor", todos_inspetores)
 else:
-    # inspetor comum sempre filtra em cima dele mesmo
+    # Inspetor comum não escolhe, é automaticamente filtrado nele mesmo
     inspetores_sel = [inspetor_logado]
 
 # ======================================================
@@ -221,7 +224,7 @@ if inspetores_sel:
     ]
 
 # ======================================================
-# 📌 RESUMO DA SELEÇÃO (SIDEBAR)
+# 📌 RESUMO DA SELEÇÃO
 # ======================================================
 st.sidebar.markdown("---")
 st.sidebar.subheader("📌 Resumo da Seleção")
@@ -251,7 +254,7 @@ if len(estabelecimento) == 1:
     )
 
 # ======================================================
-# 🧱 ABAS (diferentes para admin x inspetor)
+# 🧱 ABAS (ADMIN x INSPETOR)
 # ======================================================
 if perfil == "admin":
     aba_geral, aba_inspetores, aba_coordenacao, aba_detalhes, aba_download = st.tabs(
